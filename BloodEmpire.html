@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vampire Empire: Blood Harvest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,700;1,400&family=MedievalSharp&display=swap');
+
+        :root {
+            --blood: #880808;
+            --blood-light: #d21404;
+            --dark-void: #0a0a0a;
+        }
+
+        body {
+            background-color: var(--dark-void);
+            color: #e0e0e0;
+            font-family: 'Crimson Text', serif;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        h1, h2, h3, .font-gothic {
+            font-family: 'MedievalSharp', cursive;
+        }
+
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .clicker-container {
+            position: relative;
+            z-index: 10;
+        }
+
+        .vampire-heart {
+            transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            filter: drop-shadow(0 0 20px var(--blood));
+            cursor: pointer;
+        }
+
+        .vampire-heart:active {
+            transform: scale(0.85);
+        }
+
+        .upgrade-card, .boss-card {
+            background: rgba(30, 30, 30, 0.8);
+            border: 1px solid #333;
+            transition: all 0.2s;
+        }
+
+        .upgrade-card:hover:not(.disabled), .boss-card:hover:not(.locked) {
+            border-color: var(--blood-light);
+            background: rgba(50, 20, 20, 0.8);
+            transform: translateX(5px);
+        }
+
+        .upgrade-card.disabled, .boss-card.locked {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(1);
+        }
+
+        .floating-text {
+            position: absolute;
+            color: var(--blood-light);
+            font-weight: bold;
+            pointer-events: none;
+            animation: floatUp 1s ease-out forwards;
+            z-index: 100;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(0); opacity: 1; }
+            100% { transform: translateY(-100px); opacity: 0; }
+        }
+
+        #start-screen, #boss-lair-overlay {
+            background: radial-gradient(circle, #2a0505 0%, #0a0a0a 100%);
+            z-index: 1000;
+        }
+
+        .blood-btn {
+            background: var(--blood);
+            box-shadow: 0 0 15px var(--blood);
+            transition: all 0.3s;
+        }
+
+        .blood-btn:hover {
+            background: var(--blood-light);
+            box-shadow: 0 0 25px var(--blood-light);
+            transform: scale(1.05);
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1a1a1a; }
+        ::-webkit-scrollbar-thumb { background: var(--blood); border-radius: 10px; }
+
+        .audio-control {
+            background: rgba(40, 40, 40, 0.8);
+            border: 1px solid #444;
+            transition: all 0.3s;
+        }
+
+        #admin-panel {
+            background: rgba(20, 0, 0, 0.98);
+            border: 2px solid #ff0000;
+            box-shadow: 0 0 50px rgba(255, 0, 0, 0.5);
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            cursor: default;
+        }
+
+        #admin-header {
+            cursor: grab;
+            background: rgba(60, 0, 0, 0.5);
+            margin: -1.5rem -1.5rem 1rem -1.5rem;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #ff0000;
+        }
+
+        .admin-btn {
+            background: linear-gradient(to bottom, #4a0000, #2a0000);
+            border: 1px solid #ff0000;
+            text-shadow: 0 0 5px #ff0000;
+        }
+
+        .help-text {
+            font-size: 0.7rem;
+            color: #999;
+            font-style: italic;
+            margin-top: 2px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        #boss-ui, #dracula-status-ui {
+            background: linear-gradient(to right, transparent, rgba(136, 8, 8, 0.3), transparent);
+            border-top: 1px solid rgba(255, 0, 0, 0.5);
+            border-bottom: 1px solid rgba(255, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+
+        .hp-bar-bg { background: #222; border: 1px solid #444; }
+        .hp-bar-fill { 
+            background: linear-gradient(90deg, #600, #f00); 
+            transition: width 0.3s ease-out;
+            box-shadow: 0 0 10px #f00;
+        }
+
+        .timer-text {
+            font-family: monospace;
+            color: #ffaa00;
+            text-shadow: 0 0 5px #ffaa00;
+        }
+
+        @keyframes screenFlash {
+            0% { background-color: rgba(255, 0, 0, 0); }
+            50% { background-color: rgba(255, 0, 0, 0.3); }
+            100% { background-color: rgba(255, 0, 0, 0); }
+        }
+        .flash { animation: screenFlash 0.3s ease-out; }
+        
+        .dracula-glow {
+            text-shadow: 0 0 15px #f00, 0 0 30px #f00;
+            animation: pulseGlow 2s infinite;
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
+        }
+    </style>
+</head>
+<body class="flex flex-col md:flex-row h-screen overflow-hidden">
+
+    <!-- Admin Panel -->
+    <div id="admin-panel" class="w-80 p-6 rounded-lg top-[10%] left-[10%]">
+        <div id="admin-header" class="flex justify-between items-center">
+            <h3 class="text-red-500 text-xl underline italic font-gothic pointer-events-none">Master Console</h3>
+            <button onclick="toggleAdminUI()" class="text-gray-500 hover:text-white px-2">✕</button>
+        </div>
+        <div class="space-y-2 max-h-[70vh] overflow-y-auto pr-2 mt-4">
+            <button onclick="adminFrenzyMultiply()" class="w-full admin-btn py-2 rounded text-xs font-bold uppercase">💥 Blood Frenzy</button>
+            <span class="help-text">Multiplies your current blood by a massive amount.</span>
+
+            <button onclick="toggleAutoDefend()" id="auto-defend-btn" class="w-full bg-blue-900 py-2 rounded text-xs font-bold uppercase border border-blue-500">🛡️ Auto-Defend: OFF</button>
+            <span class="help-text">Automatically blocks all incoming damage from bosses and hunters.</span>
+
+            <button onclick="adminWeakBoss()" class="w-full bg-orange-900 py-2 rounded text-xs font-bold uppercase border border-orange-500">💀 Curse Boss (1 HP)</button>
+            <span class="help-text">Sets the active boss's health to 1.</span>
+
+            <button onclick="adminInstaWinBoss()" class="w-full bg-yellow-900 py-2 rounded text-xs font-bold uppercase border border-yellow-500">🏆 Insta-Ascension</button>
+            <span class="help-text">Instantly slays the boss and grants rewards.</span>
+
+            <button onclick="adminAddBlood(1000000)" class="w-full bg-red-900 py-2 rounded text-xs font-bold">💉 Inject 1M Blood</button>
+            <span class="help-text">Add 1,000,000 blood to your reserves immediately.</span>
+        </div>
+    </div>
+
+    <!-- Boss Lair Overlay -->
+    <div id="boss-lair-overlay" class="fixed inset-0 hidden flex flex-col items-center justify-center p-6 z-[1500]">
+        <div class="max-w-4xl w-full">
+            <div class="flex justify-between items-center mb-8">
+                <h2 class="text-5xl text-red-600 font-gothic uppercase tracking-widest">The Boss Lair</h2>
+                <button onclick="toggleBossLair()" class="text-gray-400 hover:text-white text-3xl font-bold">✕</button>
+            </div>
+            <div id="boss-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto p-4"></div>
+        </div>
+    </div>
+
+    <!-- Starting Screen -->
+    <div id="start-screen" class="fixed inset-0 flex flex-col items-center justify-center text-center p-6">
+        <h1 class="text-7xl text-red-700 mb-4 drop-shadow-2xl font-gothic">Vampire Empire</h1>
+        <p class="text-xl text-gray-400 mb-8 max-w-md italic">"In the shadows of the night, only the thirst remains."</p>
+        <button id="start-btn" class="blood-btn px-10 py-4 rounded text-2xl font-gothic text-white">Enter the Night</button>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div class="fixed top-4 left-4 z-50 flex flex-col gap-2">
+        <div class="flex gap-2">
+            <button id="toggle-music" class="audio-control p-2 rounded-full text-xl" onclick="toggleMusic()">🔇</button>
+            <button id="toggle-sfx" class="audio-control p-2 rounded-full text-xl" onclick="toggleSFX()">🔈</button>
+        </div>
+        <button id="admin-toggle-btn" class="audio-control p-2 rounded-full text-xl border-red-600 border" onclick="toggleAdminUI()">💀</button>
+    </div>
+
+    <main id="main-ui" class="flex-1 flex flex-col items-center justify-between p-6 relative transition-colors duration-200">
+        <div class="text-center mt-4">
+            <h1 id="game-title" class="text-5xl text-red-700 font-gothic">Vampire Empire</h1>
+            <p id="game-subtitle" class="italic text-gray-500 text-sm">The Eternal Reign of Harry</p>
+        </div>
+
+        <!-- Boss Attack UI -->
+        <div id="boss-ui" class="w-full max-w-xl p-4 text-center rounded-lg hidden">
+            <div class="flex justify-between items-end mb-2">
+                <div class="text-left">
+                    <span id="boss-name" class="text-2xl font-gothic text-red-500 uppercase">Newborn Thrall</span>
+                    <div class="text-[10px] uppercase text-gray-500 tracking-widest mt-1">
+                        Boss Attack in: <span id="boss-clock" class="timer-text">5.0s</span>
+                    </div>
+                </div>
+                <span id="boss-hp-text" class="text-xs text-gray-400">HP: 100 / 100</span>
+            </div>
+            <div class="hp-bar-bg w-full h-4 rounded-full overflow-hidden">
+                <div id="boss-hp-fill" class="hp-bar-fill h-full w-full"></div>
+            </div>
+        </div>
+
+        <!-- NEW DRACULA STATUS UI -->
+        <div id="dracula-status-ui" class="w-full max-w-md p-6 text-center rounded-lg hidden">
+            <div class="text-red-500 font-gothic text-3xl mb-1 dracula-glow uppercase">YOU ARE THE DRACULA</div>
+            <div class="text-gray-300 text-sm italic mb-4">The world fears your name. Hunters are closing in...</div>
+            <div class="text-[14px] uppercase text-orange-500 font-bold tracking-widest border-t border-orange-900/50 pt-3">
+                Hunters attack in: <span id="hunter-clock" class="timer-text text-xl">10.0s</span>
+            </div>
+        </div>
+
+        <div class="clicker-container flex flex-col items-center">
+            <div id="blood-count" class="text-5xl font-bold text-red-600 mb-2">0</div>
+            <div class="text-gray-400 mb-4 font-mono uppercase tracking-tighter">BPS: <span id="bps">0.0</span></div>
+            <div id="heart" class="vampire-heart text-[150px] md:text-[200px]">🧛</div>
+            
+            <button id="lair-btn" onclick="toggleBossLair()" class="mt-8 blood-btn px-8 py-3 rounded-full font-gothic text-xl tracking-tighter uppercase border border-red-400">
+                ⚔️ Boss Lair
+            </button>
+        </div>
+
+        <div class="mb-4 text-[10px] text-gray-700 tracking-widest">MASTER UID: 123765496</div>
+    </main>
+
+    <aside class="w-full md:w-96 bg-black border-l border-red-900 p-6 flex flex-col z-20">
+        <h2 class="text-2xl font-gothic text-red-600 mb-6 border-b border-red-900 pb-2">Dark Upgrades</h2>
+        <div id="shop-container" class="space-y-4 flex-1 overflow-y-auto"></div>
+        <div class="mt-4 pt-4 border-t border-gray-800 text-center">
+            <button onclick="resetGame()" class="text-[10px] text-gray-600 hover:text-red-500 underline uppercase">Wipe Progress</button>
+        </div>
+    </aside>
+
+    <script>
+        const HARRY_ID = "123765496";
+
+        // Web Audio Implementation
+        let audioCtx = null;
+        let musicGain = null;
+        let isMusicPlaying = false;
+        let melodyInterval = null;
+
+        const BOSSES = [
+            { id: 0, name: "Newborn Thrall", hp: 100, reward: 500, icon: "🩸", reqBlood: 0, reqUpgrade: null, atkPower: 10, atkSpeed: 5000 },
+            { id: 1, name: "Sewer Creeper", hp: 5000, reward: 10000, icon: "🐀", reqBlood: 1000, reqUpgrade: 'bats', atkPower: 100, atkSpeed: 4500 },
+            { id: 2, name: "Shadow Stalker", hp: 50000, reward: 100000, icon: "👤", reqBlood: 15000, reqUpgrade: 'thrall', atkPower: 1000, atkSpeed: 4000 },
+            { id: 3, name: "Ancient Elder", hp: 250000, reward: 500000, icon: "⚰️", reqBlood: 100000, reqUpgrade: 'fledgling', atkPower: 5000, atkSpeed: 3500 },
+            { id: 4, name: "Vampire Lord", hp: 2000000, reward: 4000000, icon: "🦇", reqBlood: 1000000, reqUpgrade: 'tomb', atkPower: 25000, atkSpeed: 3000 },
+            { id: 5, name: "Count Dracula", hp: 25000000, reward: 100000000, icon: "👑", reqBlood: 10000000, reqUpgrade: 'castle', atkPower: 100000, atkSpeed: 2500 }
+        ];
+
+        const UPGRADES = [
+            { id: 'bats', name: 'Bat Swarm', baseCost: 15, bps: 0.1, icon: '🦇', desc: 'Small scouts.' },
+            { id: 'thrall', name: 'Thrall', baseCost: 100, bps: 1, icon: '🩸', desc: 'Loyal humans.' },
+            { id: 'fledgling', name: 'Fledgling', baseCost: 1100, bps: 8, icon: '🧛‍♂️', desc: 'New convert.' },
+            { id: 'tomb', name: 'Ancient Tomb', baseCost: 12000, bps: 47, icon: '⚰️', desc: 'Awaken elders.' },
+            { id: 'castle', name: 'Gothic Castle', baseCost: 130000, bps: 260, icon: '🏰', desc: 'Grand fortress.' }
+        ];
+
+        let state = {
+            userId: HARRY_ID,
+            blood: 0,
+            musicOn: false,
+            sfxOn: true,
+            gameStarted: false,
+            adminMultiplier: 1,
+            activeBoss: null,
+            bossHP: 0,
+            autoDefend: false,
+            bossAttackTimer: 0,
+            hunterTimer: 10000,
+            isDracula: false,
+            defeatedBosses: [],
+            upgrades: { bats: 0, thrall: 0, fledgling: 0, tomb: 0, castle: 0 }
+        };
+
+        const bloodDisplay = document.getElementById('blood-count');
+        const bpsDisplay = document.getElementById('bps');
+        const heart = document.getElementById('heart');
+        const shopContainer = document.getElementById('shop-container');
+        const bossList = document.getElementById('boss-list');
+        const bossLairOverlay = document.getElementById('boss-lair-overlay');
+        const bossUI = document.getElementById('boss-ui');
+        const draculaUI = document.getElementById('dracula-status-ui');
+        const bossClock = document.getElementById('boss-clock');
+        const hunterClock = document.getElementById('hunter-clock');
+        const mainUI = document.getElementById('main-ui');
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const adminPanelUI = document.getElementById('admin-panel');
+
+        let particles = [];
+        let lastTimestamp = 0;
+
+        // --- Improved Audio Logic ---
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSFX(type) {
+            initAudio();
+            if (!state.sfxOn || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+
+            if (type === 'click') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.1);
+                g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'hit') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(60, audioCtx.currentTime);
+                g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            }
+        }
+
+        function startMusic() {
+            initAudio();
+            if (isMusicPlaying || !audioCtx) return;
+            isMusicPlaying = true;
+            
+            musicGain = audioCtx.createGain();
+            musicGain.connect(audioCtx.destination);
+            musicGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            // BOOSTED VOLUME: Target 0.15 instead of 0.06
+            musicGain.gain.linearRampToValueAtTime(0.18, audioCtx.currentTime + 1.5);
+
+            const playNote = (freq, time, duration, type = 'triangle', vol = 0.1) => {
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, time);
+                osc.connect(g);
+                g.connect(musicGain);
+                g.gain.setValueAtTime(0, time);
+                g.gain.linearRampToValueAtTime(vol, time + 0.05);
+                g.gain.linearRampToValueAtTime(0, time + duration);
+                osc.start(time);
+                osc.stop(time + duration);
+            };
+
+            const melody = [220, 246.94, 261.63, 293.66, 261.63, 246.94, 196.00, 220]; // A3 Minor scale
+            const organ = [440, 493.88, 523.25, 587.33]; // A4 Pipe Organ layer
+            const bass = [110, 82.41, 73.42, 82.41]; // A2, E2, D2
+            let step = 0;
+
+            const tick = () => {
+                if (!isMusicPlaying) return;
+                
+                const now = audioCtx.currentTime;
+                
+                // 1. High Organ (Sharper)
+                playNote(organ[step % organ.length], now, 1.2, 'square', 0.08);
+
+                // 2. Main Gothic Melody
+                playNote(melody[step % melody.length], now, 0.9, 'triangle', 0.15);
+                
+                // 3. Deep Ominous Bass (Stronger)
+                if (step % 4 === 0) {
+                    playNote(bass[(step / 4) % bass.length], now, 2.5, 'sawtooth', 0.2);
+                    playNote(bass[(step / 4) % bass.length] / 2, now, 2.5, 'sine', 0.3); // Sub layer
+                }
+
+                step++;
+                melodyInterval = setTimeout(tick, 900); // Slightly faster tempo
+            };
+            tick();
+        }
+
+        function stopMusic() {
+            isMusicPlaying = false;
+            if (melodyInterval) clearTimeout(melodyInterval);
+            if (musicGain) {
+                musicGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 1);
+            }
+        }
+
+        function toggleMusic() {
+            initAudio();
+            state.musicOn = !state.musicOn;
+            document.getElementById('toggle-music').innerText = state.musicOn ? '🎵' : '🔇';
+            state.musicOn ? startMusic() : stopMusic();
+            saveGame();
+        }
+
+        function toggleSFX() {
+            initAudio();
+            state.sfxOn = !state.sfxOn;
+            document.getElementById('toggle-sfx').innerText = state.sfxOn ? '🔊' : '🔈';
+            saveGame();
+        }
+
+        // --- Game Logic ---
+        function init() {
+            loadGame();
+            renderShop();
+            setupCanvas();
+            makeDraggable(adminPanelUI);
+            requestAnimationFrame(gameLoop);
+            checkDraculaStatus();
+            
+            document.getElementById('start-btn').onclick = () => {
+                initAudio();
+                state.gameStarted = true;
+                document.getElementById('start-screen').classList.add('hidden');
+                if (state.musicOn) startMusic();
+            };
+
+            heart.addEventListener('mousedown', (e) => {
+                if(!state.gameStarted) return;
+                initAudio(); 
+                playSFX('click');
+                
+                if (state.activeBoss !== null) {
+                    const dmg = 1 + (getBPS() * 0.05);
+                    state.bossHP -= dmg;
+                    createFloatingText(e.clientX, e.clientY, `-${formatNumber(dmg)} HP`, '#ff0000');
+                    if (state.bossHP <= 0) killBoss();
+                } else {
+                    state.blood += 1;
+                    createFloatingText(e.clientX, e.clientY, `+1`, '#ff0000');
+                }
+
+                createParticles(e.clientX, e.clientY);
+                updateDisplay();
+                saveGame();
+            });
+
+            window.addEventListener('resize', setupCanvas);
+        }
+
+        function checkDraculaStatus() {
+            if (state.isDracula) {
+                document.getElementById('game-title').innerText = "DRACULA'S REIGN";
+                document.getElementById('game-subtitle').innerText = "Long Live Lord Harry";
+                draculaUI.classList.remove('hidden');
+                document.body.style.boxShadow = "inset 0 0 100px #400";
+                heart.innerText = "👑";
+            }
+        }
+
+        function toggleBossLair() {
+            const isVisible = !bossLairOverlay.classList.contains('hidden');
+            if (!isVisible) renderBossLair();
+            bossLairOverlay.classList.toggle('hidden');
+        }
+
+        function renderBossLair() {
+            bossList.innerHTML = '';
+            BOSSES.forEach(boss => {
+                const isDefeated = state.defeatedBosses.includes(boss.id);
+                const upgradeReqMet = !boss.reqUpgrade || state.upgrades[boss.reqUpgrade] > 0;
+                const bloodReqMet = state.blood >= boss.reqBlood;
+                const isLocked = !upgradeReqMet || !bloodReqMet;
+                
+                const card = document.createElement('div');
+                card.className = `boss-card p-6 rounded-lg flex flex-col justify-between ${isLocked ? 'locked' : ''} ${isDefeated ? 'border-green-800' : ''}`;
+                
+                let reqString = "";
+                if (!bloodReqMet) reqString += `Req: ${formatNumber(boss.reqBlood)} Blood `;
+                if (!upgradeReqMet) {
+                    const upName = UPGRADES.find(u => u.id === boss.reqUpgrade).name;
+                    reqString += `Req: Unlock ${upName}`;
+                }
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-4 mb-4">
+                        <span class="text-4xl">${boss.icon}</span>
+                        <div>
+                            <div class="text-xl font-gothic text-red-500">${boss.name} ${isDefeated ? ' (Slain)' : ''}</div>
+                            <div class="text-[10px] text-gray-500">HP: ${formatNumber(boss.hp)} | ATK: ${formatNumber(boss.atkPower)}</div>
+                        </div>
+                    </div>
+                    <div class="mt-auto">
+                        <div class="text-[10px] text-orange-400 mb-2 uppercase">${isLocked ? reqString : 'Target Ready'}</div>
+                        <button onclick="startBossFight(${boss.id})" ${isLocked ? 'disabled' : ''} 
+                            class="w-full py-2 bg-red-900 hover:bg-red-700 text-xs font-bold rounded transition disabled:opacity-30">
+                            ${isDefeated ? 'Fight Again' : 'Challenge'}
+                        </button>
+                    </div>`;
+                bossList.appendChild(card);
+            });
+        }
+
+        function startBossFight(id) {
+            const boss = BOSSES.find(b => b.id === id);
+            state.activeBoss = id;
+            state.bossHP = boss.hp;
+            state.bossAttackTimer = boss.atkSpeed;
+            bossUI.classList.remove('hidden');
+            toggleBossLair();
+            updateBossUI();
+        }
+
+        function killBoss() {
+            const boss = BOSSES.find(b => b.id === state.activeBoss);
+            state.blood += boss.reward;
+            if (!state.defeatedBosses.includes(boss.id)) {
+                state.defeatedBosses.push(boss.id);
+            }
+            
+            if (boss.id === 5) {
+                state.isDracula = true;
+                checkDraculaStatus();
+            }
+
+            createFloatingText(window.innerWidth/2, window.innerHeight/2, `SLAIN! +${formatNumber(boss.reward)} BLOOD`, '#ffaa00');
+            state.activeBoss = null;
+            bossUI.classList.add('hidden');
+        }
+
+        function triggerBossAttack() {
+            if (state.activeBoss === null) return;
+            const boss = BOSSES.find(b => b.id === state.activeBoss);
+            
+            if (state.autoDefend) {
+                createFloatingText(window.innerWidth/2, window.innerHeight/2 + 50, "AUTO-BLOCK!", "#0088ff");
+            } else {
+                playSFX('hit');
+                state.blood = Math.max(0, state.blood - boss.atkPower);
+                mainUI.classList.add('flash');
+                setTimeout(() => mainUI.classList.remove('flash'), 300);
+                createFloatingText(window.innerWidth/2, window.innerHeight/2 + 50, `-${formatNumber(boss.atkPower)} Blood`, "#ff0000");
+            }
+            state.bossAttackTimer = boss.atkSpeed;
+        }
+
+        function triggerHunterAttack() {
+            if (state.autoDefend) {
+                createFloatingText(window.innerWidth/2, window.innerHeight/2, "HUNTERS DEFLECTED!", "#0088ff");
+            } else {
+                playSFX('hit');
+                const loss = Math.max(1000, state.blood * 0.1);
+                state.blood -= loss;
+                mainUI.classList.add('flash');
+                setTimeout(() => mainUI.classList.remove('flash'), 300);
+                createFloatingText(window.innerWidth/2, window.innerHeight/2, `HUNTER STRIKE! -${formatNumber(loss)} Blood`, "#ff0000");
+            }
+            state.hunterTimer = 10000;
+        }
+
+        function toggleAutoDefend() {
+            state.autoDefend = !state.autoDefend;
+            const btn = document.getElementById('auto-defend-btn');
+            btn.innerText = `🛡️ Auto-Defend: ${state.autoDefend ? 'ON' : 'OFF'}`;
+            btn.style.borderColor = state.autoDefend ? '#00ffff' : '#3b82f6';
+            saveGame();
+        }
+
+        function adminWeakBoss() { if (state.activeBoss !== null) { state.bossHP = 1; updateBossUI(); } }
+        function adminInstaWinBoss() { if (state.activeBoss !== null) { state.bossHP = 0; killBoss(); } }
+        function adminFrenzyMultiply() { state.blood *= 1000000; updateDisplay(); }
+        function adminAddBlood(amount) { state.blood += amount; updateDisplay(); saveGame(); }
+
+        function updateBossUI() {
+            if (state.activeBoss === null) return;
+            const boss = BOSSES.find(b => b.id === state.activeBoss);
+            document.getElementById('boss-name').innerText = `${boss.icon} ${boss.name}`;
+            const percent = Math.max(0, (state.bossHP / boss.hp) * 100);
+            document.getElementById('boss-hp-fill').style.width = `${percent}%`;
+            document.getElementById('boss-hp-text').innerText = `HP: ${formatNumber(Math.max(0, state.bossHP))} / ${formatNumber(boss.hp)}`;
+            bossClock.innerText = (state.bossAttackTimer / 1000).toFixed(1) + 's';
+        }
+
+        function getBPS() {
+            let total = 0;
+            UPGRADES.forEach(up => total += state.upgrades[up.id] * up.bps);
+            return total * state.adminMultiplier;
+        }
+
+        function buyUpgrade(id) {
+            const up = UPGRADES.find(u => u.id === id);
+            const cost = Math.floor(up.baseCost * Math.pow(1.15, state.upgrades[id]));
+            if (state.blood >= cost) {
+                state.blood -= cost;
+                state.upgrades[id]++;
+                renderShop();
+                updateDisplay();
+                saveGame();
+                playSFX('click');
+            }
+        }
+
+        function renderShop() {
+            shopContainer.innerHTML = '';
+            UPGRADES.forEach(up => {
+                const cost = Math.floor(up.baseCost * Math.pow(1.15, state.upgrades[up.id]));
+                const isDisabled = state.blood < cost;
+                const div = document.createElement('div');
+                div.className = `upgrade-card p-4 rounded-lg flex justify-between cursor-pointer ${isDisabled ? 'disabled' : ''}`;
+                div.onclick = () => buyUpgrade(up.id);
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl">${up.icon}</span>
+                        <div><div class="font-bold text-sm">${up.name}</div><div class="text-[10px] text-gray-500">${up.desc}</div></div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-red-500 font-bold text-sm">${formatNumber(cost)}</div>
+                        <div class="text-[10px]">Own: ${state.upgrades[up.id]}</div>
+                    </div>`;
+                shopContainer.appendChild(div);
+            });
+        }
+
+        function formatNumber(num) {
+            if (num >= 1e15) return (num / 1e15).toFixed(1) + 'P';
+            if (num >= 1e12) return (num / 1e12).toFixed(1) + 'T';
+            if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
+            if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+            return Math.floor(num);
+        }
+
+        function updateDisplay() {
+            bloodDisplay.innerText = formatNumber(state.blood);
+            bpsDisplay.innerText = formatNumber(getBPS());
+            updateBossUI();
+            if (state.isDracula) {
+                hunterClock.innerText = (state.hunterTimer / 1000).toFixed(1) + 's';
+            }
+        }
+
+        function createFloatingText(x, y, text, color) {
+            const el = document.createElement('div');
+            el.className = 'floating-text font-gothic text-xl';
+            el.style.left = `${x - 20}px`; el.style.top = `${y - 20}px`;
+            el.style.color = color;
+            el.innerText = text;
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        }
+
+        function setupCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+
+        function createParticles(x, y) {
+            for (let i = 0; i < 5; i++) {
+                particles.push({ x, y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 1, size: Math.random()*3+2 });
+            }
+        }
+
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+
+            if (state.gameStarted) {
+                const bps = getBPS();
+                state.blood += (bps * deltaTime) / 1000;
+                
+                if (state.activeBoss !== null) {
+                    state.bossHP -= (bps * 0.01 * deltaTime) / 1000;
+                    state.bossAttackTimer -= deltaTime;
+                    if (state.bossAttackTimer <= 0) triggerBossAttack();
+                    if (state.bossHP <= 0) killBoss();
+                }
+
+                if (state.isDracula) {
+                    state.hunterTimer -= deltaTime;
+                    if (state.hunterTimer <= 0) triggerHunterAttack();
+                }
+
+                updateDisplay();
+            }
+
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            for(let i=particles.length-1;i>=0;i--){
+                const p = particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.life-=0.02;
+                if(p.life<=0){ particles.splice(i,1); continue; }
+                ctx.fillStyle=`rgba(136,8,8,${p.life})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill();
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function makeDraggable(element) {
+            const header = document.getElementById('admin-header');
+            let p1 = 0, p2 = 0, p3 = 0, p4 = 0;
+            header.onmousedown = (e) => {
+                e.preventDefault();
+                p3 = e.clientX; p4 = e.clientY;
+                document.onmouseup = () => { document.onmouseup = null; document.onmousemove = null; };
+                document.onmousemove = (e) => {
+                    e.preventDefault();
+                    p1 = p3 - e.clientX; p2 = p4 - e.clientY;
+                    p3 = e.clientX; p4 = e.clientY;
+                    element.style.top = (element.offsetTop - p2) + "px";
+                    element.style.left = (element.offsetLeft - p1) + "px";
+                };
+            };
+        }
+
+        function toggleAdminUI() { adminPanelUI.style.display = adminPanelUI.style.display === 'block' ? 'none' : 'block'; }
+        function saveGame() { localStorage.setItem('vamp_save_v7_1', JSON.stringify(state)); }
+        function loadGame() {
+            const s = localStorage.getItem('vamp_save_v7_1');
+            if(s) {
+                const loaded = JSON.parse(s);
+                state = {...state, ...loaded, gameStarted: false, activeBoss: null};
+                document.getElementById('toggle-music').innerText = state.musicOn ? '🎵' : '🔇';
+                document.getElementById('toggle-sfx').innerText = state.sfxOn ? '🔊' : '🔈';
+                const btn = document.getElementById('auto-defend-btn');
+                btn.innerText = `🛡️ Auto-Defend: ${state.autoDefend ? 'ON' : 'OFF'}`;
+            }
+        }
+        function resetGame() { if(confirm("Wipe all data?")) { localStorage.clear(); location.reload(); } }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
